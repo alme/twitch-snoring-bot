@@ -1,6 +1,8 @@
-import config
-import requests
 import sys
+import requests
+
+# pylint: disable=import-error
+import config # type: ignore
 
 if len(sys.argv) < 2:
     print("usage: get_token.py <code>")
@@ -14,7 +16,8 @@ response = requests.post(
         'code': sys.argv[1],
         'grant_type': 'authorization_code',
         'redirect_uri': config.REDIRECT_URI
-    }
+    },
+    timeout=30
 )
 
 print(response.content)

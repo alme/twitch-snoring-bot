@@ -1,18 +1,28 @@
-import irc.bot
+"""
+main.py
+
+@brief Main bot entrypoint.
+"""
 
 import argparse
-import config
 import datetime
 import logging
 import threading
-import time
-import twitch_token
 
+# pylint: disable=import-error
+import config # type: ignore
+import twitch_token
 from api import TwitchAPI
-from playsounds import get_playsounds
+from playsounds import get_playsounds, get_last_playsound_time
+
+import irc.bot
 
 
 class TestBot(irc.bot.SingleServerIRCBot):
+    """
+    IRC bot class.
+    """
+
     def __init__(self, playsounds, time=None):
         irc.bot.SingleServerIRCBot.__init__(self, [
             (config.SERVER, config.PORT, f'oauth:{twitch_token.twitch_token.access_token}')], config.NICKNAME, config.NICKNAME)
@@ -25,10 +35,9 @@ class TestBot(irc.bot.SingleServerIRCBot):
         if time:
             self.last_playsound_time = time
         else:
-            self.last_playsound_time = datetime.datetime.now()
+            self.last_playsound_time = datetime.datetime.now(datetime.timezone.utc)
 
-        self.last_sent_playsound_time = datetime.datetime.min
-        self.timer = None
+        self.last_sent_playsound_time = datetime.datetime.min.replace(tzinfo=datetime.timezone.utc)
 
         self.start_playsound_timer()
 
@@ -36,13 +45,7 @@ class TestBot(irc.bot.SingleServerIRCBot):
         connection.join(self.channel)
         logging.info(f"Joined channel: {self.channel}")
 
-        connection.cap("REQ", "twitch.tv/commands")
-    
-    def on_pubmsg(self, connection, event):
-        text = event.arguments[0]
-
-        if text.startswith('!playsound'):
-            self.handle_playsound(text)            
+        connection.cap("REQ", "twitch.tv/commands")       
 
     def on_privmsg(self, connection, event):
         logging.info(event)
@@ -67,58 +70,51 @@ class TestBot(irc.bot.SingleServerIRCBot):
 
                 self.start_playsound_timer()
 
-    def on_playsound_played(self, playsound_time):
-        if self.last_playsound_time == playsound_time:
-            return
-
-        logging.info(f"Found latest playsound at: {playsound_time}. Updating timer.")
-        self.last_playsound_time = playsound_time
-
-        self.start_playsound_timer()
-
-    def handle_playsound(self, text):
-        tokens = text.split(' ')
-        if len(tokens) < 2:
-            return
-
-        if tokens[1] not in self.playsounds:
-            return
-
-        if (datetime.datetime.now() - self.last_playsound_time).seconds < config.PLAYSOUND_COOLDOWN:
-            return
-
-        self.last_playsound_time = datetime.datetime.now()
-        self.start_playsound_timer()
-
-        logging.info(f'Played sound detected: {text}.')
-
     def start_playsound_timer(self):
-        if self.timer is not None:
-            self.timer.cancel()
-
         playsound_time = max(
+            datetime.datetime.now(datetime.timezone.utc),
             self.last_playsound_time + datetime.timedelta(seconds=config.BOT_COOLDOWN),
             self.last_sent_playsound_time + datetime.timedelta(seconds=config.PLAYSOUND_INTERVAL) + datetime.timedelta(seconds=config.BOT_COOLDOWN))
-        if playsound_time <= datetime.datetime.now():
+        if playsound_time <= datetime.datetime.now(datetime.timezone.utc):
             seconds_left = 0
         else:
-            seconds_left = (playsound_time - datetime.datetime.now()).seconds
+            seconds_left = (playsound_time - datetime.datetime.now(datetime.timezone.utc)).seconds
 
         logging.info(f'Playing sound in {seconds_left} seconds.')
 
-        self.timer = threading.Timer(seconds_left, self.send_playsound)
-        self.timer.start()
-
+        self.reactor.scheduler.execute_at(playsound_time, self.send_playsound)
         logging.info(f'Timer set to play sound at {playsound_time.strftime("%Y-%m-%d %H:%M:%S")}')
 
     def send_playsound(self):
-        if self.api.is_channel_live(config.CHANNEL):
-            logging.info('Sending: !playsound snoring')
-            self.connection.privmsg(self.channel, '!playsound snoring')
+        stream_data = self.api.get_channel_data(config.CHANNEL)
+
+        if stream_data.is_channel_live():
+            stream_live_time = stream_data.get_started_at()
+            minimum_stream_live_time = stream_live_time + datetime.timedelta(seconds=config.STREAM_LIVE_MINIMUM)
+            
+            if datetime.datetime.now(datetime.timezone.utc) > minimum_stream_live_time:
+                last_playsound_time = get_last_playsound_time()
+                last_cooldown_time = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(seconds=config.PLAYSOUND_COOLDOWN)
+                if last_playsound_time is not None and last_playsound_time >= last_cooldown_time:
+                    logging.info(f'Playsound was sent in the last {config.PLAYSOUND_COOLDOWN} seconds '
+                                f'(at: {last_playsound_time}), resetting timer.')
+
+                    self.last_playsound_time = last_playsound_time
+                    self.start_playsound_timer()
+                else:
+                    logging.info('Sending: !playsound snoring')
+                    self.connection.privmsg(self.channel, '!playsound snoring')
+
+            else:
+                logging.info(f'Stream not live for long enough (minimum: {minimum_stream_live_time}), not sending message.')
+
+                self.last_playsound_time = datetime.datetime.now(datetime.timezone.utc)
+                self.start_playsound_timer()
+
         else:
             logging.info('Channel is not live, not sending message.')
 
-            self.last_playsound_time = datetime.datetime.now()
+            self.last_playsound_time = datetime.datetime.now(datetime.timezone.utc)
             self.start_playsound_timer()
 
 

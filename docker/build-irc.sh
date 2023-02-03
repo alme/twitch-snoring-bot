@@ -10,7 +10,7 @@ eval $(ansible-vault view --vault-password-file vault.password vars/irc.vault)
 envsubst < templates/config.py > "${BUILD_DIR}/config.py"
 
 # Build images
-docker build -f base/python-irc.base.Dockerfile --tag snoring-bot ..
+docker build -f base/python-irc.base.Dockerfile --tag snoring-bot-irc ..
 
 # Clean up
 rm -rf "${BUILD_DIR}"

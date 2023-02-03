@@ -1,7 +1,26 @@
 import config
+import datetime
 import json
 import requests
 import twitch_token
+
+class TwitchStream:
+
+    def __init__(self, stream_data):
+        self.stream_data = stream_data
+
+    def is_channel_live(self):
+        if len(self.stream_data["data"]) == 0:
+            return False
+            
+        return self.stream_data["data"][0]["type"] == "live"
+
+    def get_started_at(self):
+        if len(self.stream_data["data"]) == 0:
+            return None
+
+        return datetime.datetime.fromisoformat(self.stream_data["data"][0]["started_at"])
+
 
 class TwitchAPI:
 
@@ -24,11 +43,8 @@ class TwitchAPI:
             raise Exception(f"Received invalid response ({response.status_code}) when sending "
                             f"API request to {url}.")
 
-    def is_channel_live(self, channel):
+    def get_channel_data(self, channel):
         response = self.send_api_request(config.API_URL.format(method="streams"), {'user_login': channel})        
 
         data = json.loads(response.content)
-        if len(data["data"]) == 0:
-            return False
-            
-        return data["data"][0]["type"] == "live"
+        return TwitchStream(data)

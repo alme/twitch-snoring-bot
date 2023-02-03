@@ -1,3 +1,11 @@
 {
-    "build": {"dockerfile": "docker/dev/devcontainer.Dockerfile"}
+    "build": {"dockerfile": "docker/dev/devcontainer.Dockerfile"},
+    "customizations": {
+        "vscode": {
+            "settings": {
+                "python.linting.enabled": true,
+                "python.linting.pylintEnabled": true
+            }
+        }
+    }
 }

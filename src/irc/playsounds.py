@@ -1,4 +1,7 @@
+import config
+import datetime
 import lxml.html as LH
+import os.path
 import requests
 
 def get_playsounds(url):
@@ -18,3 +21,15 @@ def get_playsounds(url):
         playsounds.add(sound.text)
 
     return playsounds
+
+
+def get_last_playsound_time():
+    try:
+        with open(config.TIMESTAMP_FILE, 'r') as f:
+            timestamp_str = f.read()
+            timestamp = datetime.datetime.fromisoformat(timestamp_str).replace(tzinfo=datetime.timezone.utc)
+
+            return timestamp
+
+    except FileNotFoundError:
+        return None
